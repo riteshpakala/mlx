@@ -2,6 +2,7 @@
 
 #include "mlx/backend/cuda/quantized/quantized.h"
 #include "mlx/backend/cuda/device.h"
+#include "mlx/backend/cuda/gemms/cublas_gemm.h"
 #include "mlx/backend/cuda/quantized/qmm/qmm.h"
 #include "mlx/backend/cuda/quantized/quantized_utils.h"
 #include "mlx/dtype_utils.h"
@@ -82,6 +83,47 @@ void QuantizedMatmul::eval_gpu(const std::vector<array>& inputs, array& out) {
   }
   if (can_use_qmv) {
     call_qmv();
+    return;
+  }
+
+  // GPU fallback for affine quantization: dequantize weights then cuBLAS GEMM.
+  // Used on GPUs without CUTLASS support (e.g. sm_86 / RTX 30xx).
+  if (mode_ == QuantizationMode::Affine && biases.has_value() && transpose_) {
+    array x_rc = ensure_row_contiguous(x, encoder, s);
+
+    // Build dequantized weight: [N, K_packed] uint32 → [N, K] x.dtype()
+    auto w_deq_shape = w.shape();
+    w_deq_shape.back() = w.shape(-1) * 32 / bits_;
+    const int K_deq = static_cast<int>(w_deq_shape.back());
+    const int N_deq = static_cast<int>(w.shape(-2));
+    array w_dq(
+        cu::malloc_async((size_t)N_deq * K_deq * x.itemsize(), encoder),
+        w_deq_shape,
+        x.dtype());
+    encoder.add_temporary(w_dq);
+    affine_dequantize(w, scales, *biases, w_dq, group_size_, bits_, encoder, s);
+
+    // Merge all batch dims into M: [B, M, K] → [B*M, K]
+    const int M_eff = B * M;
+    const int64_t lda = static_cast<int64_t>(K);
+    const int64_t ldb = static_cast<int64_t>(K_deq);
+
+    out.set_data(cu::malloc_async(out.nbytes(), encoder));
+
+    // x_rc: [B*M, K] (not transposed), w_dq: [N, K] (transposed → [K, N])
+    // Result: [B*M, N] = [B, M, N] in memory
+    CublasGemm gemm(
+        encoder.device(),
+        x.dtype(),
+        false, M_eff, K, lda,   // a: [B*M, K]
+        true,  N_deq, K_deq, ldb, // b: [N, K] transposed
+        1, static_cast<int64_t>(M_eff) * K, 0LL);
+    gemm.run(
+        encoder, out, x_rc, w_dq,
+        {1},
+        {static_cast<int64_t>(M_eff) * K},
+        {0LL},
+        1.0f);
     return;
   }
 
