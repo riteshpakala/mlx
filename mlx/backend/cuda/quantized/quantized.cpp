@@ -110,13 +110,15 @@ void QuantizedMatmul::eval_gpu(const std::vector<array>& inputs, array& out) {
 
     out.set_data(cu::malloc_async(out.nbytes(), encoder));
 
-    // x_rc: [B*M, K] (not transposed), w_dq: [N, K] (transposed → [K, N])
-    // Result: [B*M, N] = [B, M, N] in memory
+    // x_rc: [B*M, K] (not transposed), w_dq: [N, K] (physically), transposed
+    // CublasGemm convention: b_rows=K (inner), b_cols=N (output), b_transposed
+    // describes the physical storage ([N,K] = transposed), ldb=K.
+    // Result: [B*M, N] = [B, M, N] in memory.
     CublasGemm gemm(
         encoder.device(),
         x.dtype(),
-        false, M_eff, K, lda,   // a: [B*M, K]
-        true,  N_deq, K_deq, ldb, // b: [N, K] transposed
+        false, M_eff, K, lda, // a: logical [B*M, K], row-major, lda=K
+        true,  K, N, ldb,     // b: logical [K, N], physical [N,K], ldb=K
         1, static_cast<int64_t>(M_eff) * K, 0LL);
     gemm.run(
         encoder, out, x_rc, w_dq,
