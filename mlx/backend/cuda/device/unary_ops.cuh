@@ -11,11 +11,19 @@
 
 namespace mlx::core::cu {
 
+// Helper: true for __half and __nv_bfloat16 — cuda::std:: math ops are
+// ambiguous for these types when GCC's cmath overloads are in scope.
+template <typename T>
+static constexpr bool is_half_v =
+    cuda::std::is_same_v<T, __half> || cuda::std::is_same_v<T, __nv_bfloat16>;
+
 struct Abs {
   template <typename T>
   __device__ T operator()(T x) {
     if constexpr (cuda::std::is_unsigned_v<T>) {
       return x;
+    } else if constexpr (is_half_v<T>) {
+      return static_cast<T>(::fabsf(static_cast<float>(x)));
     } else {
       return cuda::std::abs(x);
     }
@@ -25,42 +33,66 @@ struct Abs {
 struct ArcCos {
   template <typename T>
   __device__ T operator()(T x) {
-    return cuda::std::acos(x);
+    if constexpr (is_half_v<T>) {
+      return static_cast<T>(::acosf(static_cast<float>(x)));
+    } else {
+      return cuda::std::acos(x);
+    }
   }
 };
 
 struct ArcCosh {
   template <typename T>
   __device__ T operator()(T x) {
-    return cuda::std::acosh(x);
+    if constexpr (is_half_v<T>) {
+      return static_cast<T>(::acoshf(static_cast<float>(x)));
+    } else {
+      return cuda::std::acosh(x);
+    }
   }
 };
 
 struct ArcSin {
   template <typename T>
   __device__ T operator()(T x) {
-    return cuda::std::asin(x);
+    if constexpr (is_half_v<T>) {
+      return static_cast<T>(::asinf(static_cast<float>(x)));
+    } else {
+      return cuda::std::asin(x);
+    }
   }
 };
 
 struct ArcSinh {
   template <typename T>
   __device__ T operator()(T x) {
-    return cuda::std::asinh(x);
+    if constexpr (is_half_v<T>) {
+      return static_cast<T>(::asinhf(static_cast<float>(x)));
+    } else {
+      return cuda::std::asinh(x);
+    }
   }
 };
 
 struct ArcTan {
   template <typename T>
   __device__ T operator()(T x) {
-    return cuda::std::atan(x);
+    if constexpr (is_half_v<T>) {
+      return static_cast<T>(::atanf(static_cast<float>(x)));
+    } else {
+      return cuda::std::atan(x);
+    }
   }
 };
 
 struct ArcTanh {
   template <typename T>
   __device__ T operator()(T x) {
-    return cuda::std::atanh(x);
+    if constexpr (is_half_v<T>) {
+      return static_cast<T>(::atanhf(static_cast<float>(x)));
+    } else {
+      return cuda::std::atanh(x);
+    }
   }
 };
 
@@ -78,6 +110,8 @@ struct Ceil {
       return x;
     } else if constexpr (is_complex_v<T>) {
       return T{cuda::std::ceil(x.real()), cuda::std::ceil(x.imag())};
+    } else if constexpr (is_half_v<T>) {
+      return static_cast<T>(::ceilf(static_cast<float>(x)));
     } else {
       return cuda::std::ceil(x);
     }
@@ -94,14 +128,22 @@ struct Conjugate {
 struct Cos {
   template <typename T>
   __device__ T operator()(T x) {
-    return cuda::std::cos(x);
+    if constexpr (is_half_v<T>) {
+      return static_cast<T>(::cosf(static_cast<float>(x)));
+    } else {
+      return cuda::std::cos(x);
+    }
   }
 };
 
 struct Cosh {
   template <typename T>
   __device__ T operator()(T x) {
-    return cuda::std::cosh(x);
+    if constexpr (is_half_v<T>) {
+      return static_cast<T>(::coshf(static_cast<float>(x)));
+    } else {
+      return cuda::std::cosh(x);
+    }
   }
 };
 
@@ -134,14 +176,22 @@ struct ErfInv {
 struct Exp {
   template <typename T>
   __device__ T operator()(T x) {
-    return cuda::std::exp(x);
+    if constexpr (is_half_v<T>) {
+      return static_cast<T>(::expf(static_cast<float>(x)));
+    } else {
+      return cuda::std::exp(x);
+    }
   }
 };
 
 struct Expm1 {
   template <typename T>
   __device__ T operator()(T x) {
-    return cuda::std::expm1(x);
+    if constexpr (is_half_v<T>) {
+      return static_cast<T>(::expm1f(static_cast<float>(x)));
+    } else {
+      return cuda::std::expm1(x);
+    }
   }
 };
 
@@ -152,6 +202,8 @@ struct Floor {
       return x;
     } else if constexpr (is_complex_v<T>) {
       return T{cuda::std::floor(x.real()), cuda::std::floor(x.imag())};
+    } else if constexpr (is_half_v<T>) {
+      return static_cast<T>(::floorf(static_cast<float>(x)));
     } else {
       return cuda::std::floor(x);
     }
@@ -168,7 +220,11 @@ struct Imag {
 struct Log {
   template <typename T>
   __device__ T operator()(T x) {
-    return cuda::std::log(x);
+    if constexpr (is_half_v<T>) {
+      return static_cast<T>(::logf(static_cast<float>(x)));
+    } else {
+      return cuda::std::log(x);
+    }
   }
 };
 
@@ -178,6 +234,8 @@ struct Log2 {
     if constexpr (is_complex_v<T>) {
       auto y = Log{}(x);
       return {y.real() / CUDART_LN2_F, y.imag() / CUDART_LN2_F};
+    } else if constexpr (is_half_v<T>) {
+      return static_cast<T>(::log2f(static_cast<float>(x)));
     } else {
       return cuda::std::log2(x);
     }
@@ -187,7 +245,11 @@ struct Log2 {
 struct Log10 {
   template <typename T>
   __device__ T operator()(T x) {
-    return cuda::std::log10(x);
+    if constexpr (is_half_v<T>) {
+      return static_cast<T>(::log10f(static_cast<float>(x)));
+    } else {
+      return cuda::std::log10(x);
+    }
   }
 };
 
@@ -209,6 +271,8 @@ struct Log1p {
         float z0 = hypotf(x + 1, y);
         return {logf(z0), theta};
       }
+    } else if constexpr (is_half_v<T>) {
+      return static_cast<T>(::log1pf(static_cast<float>(z)));
     } else {
       return cuda::std::log1p(z);
     }
@@ -244,6 +308,8 @@ struct Round {
   __device__ T operator()(T x) {
     if constexpr (is_complex_v<T>) {
       return {cuda::std::rint(x.real()), cuda::std::rint(x.imag())};
+    } else if constexpr (is_half_v<T>) {
+      return static_cast<T>(::rintf(static_cast<float>(x)));
     } else {
       return cuda::std::rint(x);
     }
@@ -253,8 +319,14 @@ struct Round {
 struct Sigmoid {
   template <typename T>
   __device__ T operator()(T x) {
-    T y = 1 / (1 + cuda::std::exp(cuda::std::abs(x)));
-    return (x < 0) ? y : 1 - y;
+    if constexpr (is_half_v<T>) {
+      float xf = static_cast<float>(x);
+      float y = 1.f / (1.f + ::expf(::fabsf(xf)));
+      return static_cast<T>(xf < 0.f ? y : 1.f - y);
+    } else {
+      T y = 1 / (1 + cuda::std::exp(cuda::std::abs(x)));
+      return (x < 0) ? y : 1 - y;
+    }
   }
 };
 
@@ -280,14 +352,22 @@ struct Sign {
 struct Sin {
   template <typename T>
   __device__ T operator()(T x) {
-    return cuda::std::sin(x);
+    if constexpr (is_half_v<T>) {
+      return static_cast<T>(::sinf(static_cast<float>(x)));
+    } else {
+      return cuda::std::sin(x);
+    }
   }
 };
 
 struct Sinh {
   template <typename T>
   __device__ T operator()(T x) {
-    return cuda::std::sinh(x);
+    if constexpr (is_half_v<T>) {
+      return static_cast<T>(::sinhf(static_cast<float>(x)));
+    } else {
+      return cuda::std::sinh(x);
+    }
   }
 };
 
@@ -301,7 +381,11 @@ struct Square {
 struct Sqrt {
   template <typename T>
   __device__ T operator()(T x) {
-    return cuda::std::sqrt(x);
+    if constexpr (is_half_v<T>) {
+      return static_cast<T>(::sqrtf(static_cast<float>(x)));
+    } else {
+      return cuda::std::sqrt(x);
+    }
   }
 };
 
@@ -323,14 +407,22 @@ struct Rsqrt {
 struct Tan {
   template <typename T>
   __device__ T operator()(T x) {
-    return cuda::std::tan(x);
+    if constexpr (is_half_v<T>) {
+      return static_cast<T>(::tanf(static_cast<float>(x)));
+    } else {
+      return cuda::std::tan(x);
+    }
   }
 };
 
 struct Tanh {
   template <typename T>
   __device__ T operator()(T x) {
-    return cuda::std::tanh(x);
+    if constexpr (is_half_v<T>) {
+      return static_cast<T>(::tanhf(static_cast<float>(x)));
+    } else {
+      return cuda::std::tanh(x);
+    }
   }
 };
 

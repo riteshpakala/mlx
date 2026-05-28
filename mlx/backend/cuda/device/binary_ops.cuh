@@ -18,6 +18,8 @@ struct FloorDivide {
   __device__ T operator()(T x, T y) {
     if constexpr (cuda::std::is_integral_v<T>) {
       return x / y;
+    } else if constexpr (is_half_v<T>) {
+      return static_cast<T>(::truncf(static_cast<float>(x) / static_cast<float>(y)));
     } else {
       return cuda::std::trunc(x / y);
     }
@@ -46,6 +48,13 @@ struct Remainder {
       }
     } else if constexpr (is_complex_v<T>) {
       return x % y;
+    } else if constexpr (is_half_v<T>) {
+      float xf = static_cast<float>(x), yf = static_cast<float>(y);
+      float r = ::fmodf(xf, yf);
+      if (r != 0.f && ((r < 0.f) != (yf < 0.f))) {
+        r += yf;
+      }
+      return static_cast<T>(r);
     } else {
       T r = cuda::std::fmod(x, y);
       if (r != 0 && (r < 0 != y < 0)) {
@@ -66,14 +75,18 @@ struct Equal {
 struct NaNEqual {
   template <typename T>
   __device__ bool operator()(T x, T y) {
-    using cuda::std::isnan;
     if constexpr (is_complex_v<T>) {
+      using cuda::std::isnan;
       return x == y ||
           (isnan(x.real()) && isnan(y.real()) && isnan(x.imag()) &&
            isnan(y.imag())) ||
           (x.real() == y.real() && isnan(x.imag()) && isnan(y.imag())) ||
           (isnan(x.real()) && isnan(y.real()) && x.imag() == y.imag());
+    } else if constexpr (is_half_v<T>) {
+      float xf = static_cast<float>(x), yf = static_cast<float>(y);
+      return x == y || (::isnan(xf) && ::isnan(yf));
     } else {
+      using cuda::std::isnan;
       return x == y || (isnan(x) && isnan(y));
     }
   }
@@ -130,6 +143,19 @@ struct LogAddExp {
       } else {
         return Log1p{}(Exp{}(min - max)) + max;
       }
+    } else if constexpr (is_half_v<T>) {
+      float xf = static_cast<float>(x), yf = static_cast<float>(y);
+      if (::isnan(xf) || ::isnan(yf)) {
+        return cuda::std::numeric_limits<T>::quiet_NaN();
+      }
+      float maxval = ::fmaxf(xf, yf);
+      float minval = ::fminf(xf, yf);
+      float neg_inf = -cuda::std::numeric_limits<float>::infinity();
+      float pos_inf = cuda::std::numeric_limits<float>::infinity();
+      return static_cast<T>(
+          (minval == neg_inf || maxval == pos_inf)
+          ? maxval
+          : maxval + ::log1pf(::expf(minval - maxval)));
     } else {
       if (cuda::std::isnan(x) || cuda::std::isnan(y)) {
         return cuda::std::numeric_limits<T>::quiet_NaN();
@@ -154,6 +180,11 @@ struct Maximum {
         return x;
       }
       return x > y ? x : y;
+    } else if constexpr (is_half_v<T>) {
+      if (::isnan(static_cast<float>(x))) {
+        return x;
+      }
+      return x > y ? x : y;
     } else {
       if (cuda::std::isnan(x)) {
         return x;
@@ -170,6 +201,11 @@ struct Minimum {
       return min(x, y);
     } else if constexpr (is_complex_v<T>) {
       if (cuda::std::isnan(x.real()) || cuda::std::isnan(x.imag())) {
+        return x;
+      }
+      return x < y ? x : y;
+    } else if constexpr (is_half_v<T>) {
+      if (::isnan(static_cast<float>(x))) {
         return x;
       }
       return x < y ? x : y;
@@ -221,6 +257,8 @@ struct Power {
       return res;
     } else if constexpr (is_complex_v<T>) {
       return cuda::std::pow(base, exp);
+    } else if constexpr (is_half_v<T>) {
+      return static_cast<T>(::powf(static_cast<float>(base), static_cast<float>(exp)));
     } else {
       return cuda::std::pow(base, exp);
     }
@@ -286,7 +324,11 @@ struct RightShift {
 struct ArcTan2 {
   template <typename T>
   __device__ T operator()(T y, T x) {
-    return cuda::std::atan2(y, x);
+    if constexpr (is_half_v<T>) {
+      return static_cast<T>(::atan2f(static_cast<float>(y), static_cast<float>(x)));
+    } else {
+      return cuda::std::atan2(y, x);
+    }
   }
 };
 
