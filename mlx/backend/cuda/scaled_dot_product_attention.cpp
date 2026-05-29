@@ -181,7 +181,7 @@ inline BytesKey<SDPACacheKey> build_sdpa_cache_key(
 
 auto& sdpa_cache() {
   static LRUBytesKeyCache<SDPACacheKey, DnnGraph> cache(
-      "MLX_CUDA_SDPA_CACHE_SIZE", /* default_capacity */ 256);
+      "MLX_CUDA_SDPA_CACHE_SIZE", /* default_capacity */ 2048);
   return cache;
 }
 
